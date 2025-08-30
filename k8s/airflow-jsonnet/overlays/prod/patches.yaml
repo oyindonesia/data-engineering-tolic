@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: airflow
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: airflow-webserver
+          resources:
+            requests: { cpu: "200m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }

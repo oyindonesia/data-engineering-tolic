@@ -1,0 +1,44 @@
+"edit_uri": ""
+"extra_css":
+  - "stylesheets/extra.css"
+"markdown_extensions":
+  - "pymdownx.highlight"
+  - "pymdownx.superfences"
+  - "mdx_truly_sane_lists":
+      "nested_indent": 2
+      "truly_sane": true
+"plugins":
+  - "search":
+      "separator": "[\\s\\-\\.]+"
+  - "minify":
+      "minify_html": true
+  - "exclude-search":
+      "exclude":
+        - "1.31/*"
+        - "1.30/*"
+        - "1.29/*"
+        - "1.28/*"
+"repo_name": "jsonnet-libs/k8s-libsonnet"
+"repo_url": "https://github.com/jsonnet-libs/k8s-libsonnet"
+"site_name": "k8s jsonnet library"
+"site_url": "https://jsonnet-libs.github.io/k8s-libsonnet"
+"theme":
+  "features":
+    - "navigation.tabs"
+    - "navigation.indexes"
+  "name": "material"
+  "palette":
+    - "accent": "indigo"
+      "media": "(prefers-color-scheme: light)"
+      "primary": "indigo"
+      "scheme": "default"
+      "toggle":
+        "icon": "material/toggle-switch-off-outline"
+        "name": "Switch to dark mode"
+    - "accent": "red"
+      "media": "(prefers-color-scheme: dark)"
+      "primary": "red"
+      "scheme": "slate"
+      "toggle":
+        "icon": "material/toggle-switch"
+        "name": "Switch to light mode"

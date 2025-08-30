@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-sync-settings
+data:
+  GITSYNC_BRANCH: "master"
+  GITSYNC_REPO: "https://github.com/oyindonesia/data-engineering-airflow.git"
+  GITSYNC_DEPTH: "1"
+  GITSYNC_ROOT: "/git"
+  GITSYNC_LINK: "repo"
+  GITSYNC_ADD_USER: "true"
+  GITSYNC_WAIT: "120"
+  GITSYNC_MAX_SYNC_FAILURES: "5"
+  GITSYNC_ONE_TIME: "false"
+  GITSYNC_PERMISSIONS: "0777"
+  GITSYNC_SYNC_TIMEOUT: "180s"
+  GITSYNC_USERNAME: "oybot"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-env-vars
+data:
+  AIRFLOW_ENVIRONMENT: dev
+  PYTHONPATH: /opt/airflow/dags/repo/dags
+  GOOGLE_KEY_PATH: /opt/airflow/credentials/gcloud/gcp_sakey.json
+  AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?key_path=/opt/airflow/credentials/gcloud/gcp_sakey.json'

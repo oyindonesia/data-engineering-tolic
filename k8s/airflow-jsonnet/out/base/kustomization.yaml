@@ -1,0 +1,8 @@
+resources:
+  - namespace.yaml
+  - postgres-deployment.yaml
+  - postgres-service.yaml
+  - airflow-webserver-deployment.yaml
+  - airflow-webserver-service.yaml
+  - airflow-scheduler-deployment.yaml
+  - airflow-triggerer-deployment.yaml

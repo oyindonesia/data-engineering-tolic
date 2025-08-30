@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  # - helm/airflow-core-rendered.yaml
+  # - helm/cleanup-cronjob-rendered.yaml
+  # - helm/postgres-rendered.yaml
+  # - helm/rolebindings-rendered.yaml
+  # - helm/roles-rendered.yaml
+  # - helm/service-accounts-rendered.yaml
+  # - helm/statsd-rendered.yaml

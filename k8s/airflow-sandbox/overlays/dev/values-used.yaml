@@ -1,0 +1,98 @@
+airflow:
+  env:
+  - name: GOOGLE_KEY_PATH
+    value: /opt/airflow/credentials/gcloud/gcp_sakey.json
+  - name: AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT
+    value: 'google-cloud-platform://?key_path=/opt/airflow/credentials/gcloud/gcp_sakey.json'
+
+images:
+  airflow:
+    repository: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow
+    tag: latest
+
+executor: LocalKubernetesExecutor
+
+workers:
+  replicas: 0
+
+redis:
+  enabled: false
+
+triggerer:
+  enabled: false
+
+webserver:
+  replicas: 1
+  service:
+    type: NodePort
+    ports:
+      - name: airflow-ui
+        port: 8082
+        targetPort: 8080
+        nodePort: 30082
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  serviceAccount:
+    automountServiceAccountToken: false
+    annotations: {iam.gke.io/gcp-service-account: dataengineering-airflow@data-298904.iam.gserviceaccount.com}
+
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m  # Increased since scheduler runs tasks
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  serviceAccount:
+    automountServiceAccountToken: false
+    annotations: {iam.gke.io/gcp-service-account: dataengineering-airflow@data-298904.iam.gserviceaccount.com}
+  logGroomerSidecar:
+    enabled: false
+
+data:
+  metadataConnection:
+    user: airflow
+    pass: airflow
+    protocol: postgresql
+    host: ~
+    port: 5432
+    db: airflow
+
+# Dev-specific PostgreSQL settings
+postgresql:
+  enabled: true
+  auth:
+    enablePostgresUser: true
+    postgresPassword: airflow
+    username: airflow
+    password: airflow
+    database: airflow
+  primary:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+
+# DAGs configuration for dev environment
+dags:
+  gitSync:
+    enabled: true
+
+# Persistent storage settings for dev
+logs:
+  persistence:
+    enabled: false  # Use emptyDir for dev
+
+# Cleanup settings
+cleanup:
+  enabled: false

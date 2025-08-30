@@ -1,0 +1,75 @@
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: airflow-sandbox-scheduler
+# spec:
+#   template:
+#     spec:
+#       containers:
+#       - name: scheduler
+#         env:
+#         - name: GOOGLE_APPLICATION_CREDENTIALS
+#           value: /opt/airflow/credentials/gcloud/gcp-sakey.json
+#         volumeMounts:
+#         - name: gcp-credentials
+#           mountPath: /opt/airflow/credentials/gcloud/gcp-sakey.json
+#           subPath: gcp-sakey.json
+#           readOnly: true
+#       volumes:
+#       - name: gcp-credentials
+#         secret:
+#           secretName: gcp-credentials
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: airflow-sandbox-scheduler
+spec:
+  template:
+    spec:
+      containers:
+      - name: git-sync  # This identifies which container to patch
+        envFrom:
+        - configMapRef:
+            name: git-sync-settings
+        - secretRef:
+            name: git-sync-secret
+        image: registry.k8s.io/git-sync/git-sync:v4.3.0
+        imagePullPolicy: IfNotPresent
+        resources: {}
+        securityContext:
+          runAsUser: 65533
+        volumeMounts:
+        - mountPath: /git
+          name: dags
+
+      initContainers:
+      - name: git-sync-init  # This identifies which init container to patch
+        envFrom:
+        - configMapRef:
+            name: git-sync-settings
+        - secretRef:
+            name: git-sync-secret
+        image: registry.k8s.io/git-sync/git-sync:v4.3.0
+        imagePullPolicy: IfNotPresent
+        resources: {}
+        securityContext:
+          runAsUser: 65533
+        volumeMounts:
+        - mountPath: /git
+          name: dags
+      nodeSelector: {}
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 0
+        runAsUser: 50000
+      serviceAccountName: airflow-sandbox-scheduler
+      terminationGracePeriodSeconds: 10
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-config
+        name: config
+      - emptyDir: {}
+        name: dags

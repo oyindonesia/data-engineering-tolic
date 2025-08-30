@@ -1,0 +1,5 @@
+resources:
+  - ../../base
+nameSuffix: -prod
+patches:
+  - path: patches.yaml

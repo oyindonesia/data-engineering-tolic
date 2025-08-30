@@ -1,0 +1,98 @@
+airflow:
+  env:
+    - name: AIRFLOW__CORE__LOAD_EXAMPLES
+      value: "True"  # Enable examples in dev
+    - name: AIRFLOW__WEBSERVER__EXPOSE_CONFIG
+      value: "True"
+    - name: AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION
+      value: "False"
+    - name: AIRFLOW__WEBSERVER__BASE_URL
+      value: "http://localhost:8082"
+
+executor: LocalKubernetesExecutor
+
+# Disable components not needed for LocalKubernetesExecutor
+workers:
+  replicas: 0
+
+redis:
+  enabled: false
+
+triggerer:
+  enabled: false
+
+# Smaller resources for dev
+webserver:
+  replicas: 1
+  service:
+    type: NodePort
+    ports:
+      - name: airflow-ui
+        port: 8082
+        targetPort: 8080
+        nodePort: 30082  # Access via http://localhost:30082
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# Scheduler handles all task execution with LocalExecutor
+scheduler:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m  # Increased since scheduler runs tasks
+      memory: 512Mi
+    limits:
+      cpu: 1
+      memory: 2Gi
+
+# Dev-specific PostgreSQL settings
+postgresql:
+  enabled: true
+  auth:
+    enablePostgresUser: true
+    postgresPassword: airflow
+    username: airflow
+    password: airflow
+    database: airflow
+  primary:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+
+# DAGs configuration for dev environment
+dags:
+  # Git-sync disabled - using examples instead
+  gitSync:
+    # enabled: false
+    enabled: true
+    repo: https://github.com/apache/airflow.git
+    branch: v2-2-stable
+    rev: HEAD
+    # The git revision (branch, tag, or hash) to check out, v4 only
+    ref: v2-2-stable
+    depth: 1
+    # the number of consecutive failures allowed before aborting
+    maxFailures: 0
+    # subpath within the repo where dags are located
+    # should be "" if dags are at repo root
+    subPath: "tests/dags"
+    #     GITSYNC_USERNAME: <base64_encoded_git_username>
+    #     GITSYNC_PASSWORD: <base64_encoded_git_password>
+
+# Persistent storage settings for dev
+logs:
+  persistence:
+    enabled: false  # Use emptyDir for dev
+
+# Cleanup settings
+cleanup:
+  enabled: true

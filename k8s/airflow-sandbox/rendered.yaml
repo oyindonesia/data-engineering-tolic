@@ -1,0 +1,1620 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    name: airflow-sandbox
+  name: airflow-sandbox
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: create-user-job
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-create-user-job
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: run-airflow-migrations
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-migrate-database-job
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: dataengineering-airflow@data-298904.iam.gserviceaccount.com
+  labels:
+    chart: airflow-1.16.0
+    component: scheduler
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-scheduler
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: statsd
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-statsd
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  annotations:
+    iam.gke.io/gcp-service-account: dataengineering-airflow@data-298904.iam.gserviceaccount.com
+  labels:
+    chart: airflow-1.16.0
+    component: webserver
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-webserver
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+automountServiceAccountToken: true
+kind: ServiceAccount
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: worker
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-worker
+  namespace: airflow-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-pod-launcher-role
+  namespace: airflow-sandbox
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - create
+  - list
+  - get
+  - patch
+  - watch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - pods/exec
+  verbs:
+  - create
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-pod-log-reader-role
+  namespace: airflow-sandbox
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - list
+  - get
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/log
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-pod-launcher-rolebinding
+  namespace: airflow-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-sandbox-pod-launcher-role
+subjects:
+- kind: ServiceAccount
+  name: airflow-sandbox-scheduler
+  namespace: airflow-sandbox
+- kind: ServiceAccount
+  name: airflow-sandbox-worker
+  namespace: airflow-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-pod-log-reader-rolebinding
+  namespace: airflow-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: airflow-sandbox-pod-log-reader-role
+subjects:
+- kind: ServiceAccount
+  name: airflow-sandbox-webserver
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+data:
+  AIRFLOW_ENVIRONMENT: dev
+  PYTHONPATH: /opt/airflow/dags/repo/dags
+kind: ConfigMap
+metadata:
+  name: airflow-env-vars
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+data:
+  airflow.cfg: "[celery]\nflower_url_prefix = \nworker_concurrency = 16\n\n[celery_kubernetes_executor]\nkubernetes_queue
+    = kubernetes\n\n[core]\nauth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager\ncolored_console_log
+    = False\ndags_folder = /opt/airflow/dags/repo/dags\nexecutor = LocalKubernetesExecutor\nload_examples
+    = False\nremote_logging = False\n\n[elasticsearch]\njson_format = True\nlog_id_template
+    = {dag_id}_{task_id}_{execution_date}_{try_number}\n\n[elasticsearch_configs]\nmax_retries
+    = 3\nretry_timeout = True\ntimeout = 30\n\n[google]\noauth_callback_route = /oauth2callback\n\n[kerberos]\nccache
+    = /var/kerberos-ccache/cache\nkeytab = /etc/airflow.keytab\nprincipal = airflow@FOO.COM\nreinit_frequency
+    = 3600\n\n[kubernetes]\nairflow_configmap = airflow-sandbox-config\nairflow_local_settings_configmap
+    = airflow-sandbox-config\nmulti_namespace_mode = False\nnamespace = airflow-sandbox\npod_template_file
+    = /opt/airflow/pod_templates/pod_template_file.yaml\nworker_container_repository
+    = asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow\nworker_container_tag
+    = latest\n\n[kubernetes_executor]\ndags_in_image = False\ndelete_worker_pods =
+    True\nmulti_namespace_mode = False\nnamespace = airflow-sandbox\npod_template_file
+    = /opt/airflow/pod_templates/pod_template_file.yaml\nworker_container_repository
+    = asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow\nworker_container_tag
+    = latest\n\n[logging]\nbase_log_folder = /opt/airflow/logs\ncolored_console_log
+    = True\ndelete_local_logs = True\ngoogle_key_path = \nremote_base_log_folder =
+    gs://dev-oy-bi-airflow-log/k8s/\nremote_logging = True\ntrigger_log_server_port
+    = 8794\nworker_log_server_port = 8793\n\n[metrics]\nstatsd_host = airflow-sandbox-statsd\nstatsd_on
+    = true\nstatsd_port = 9125\nstatsd_prefix = airflow\n\n[operators]\ndefault_deferrable
+    = True\ndefault_queue = kubernetes\n\n[scheduler]\nrun_duration = 41460\nstandalone_dag_processor
+    = False\nstatsd_host = airflow-sandbox-statsd\nstatsd_on = True\nstatsd_port =
+    9125\nstatsd_prefix = airflow\n\n[webserver]\nauth_backends = airflow.providers.google.common.auth_backend.google_oauth\nauthenticate
+    = True\ndefault_ui_timezone = Asia/Jakarta\nenable_proxy_fix = True\nrbac = True\nshow_trigger_form_if_no_params
+    = True"
+  airflow_local_settings.py: |2-
+
+    from airflow.www.utils import UIAlert
+
+    DASHBOARD_UIALERTS = [
+      UIAlert(
+        'Usage of a dynamic webserver secret key detected. We recommend a static webserver secret key instead.'
+        ' See the <a href='
+        '"https://airflow.apache.org/docs/helm-chart/stable/production-guide.html#webserver-secret-key" '
+        'target="_blank" rel="noopener noreferrer">'
+        'Helm Chart Production Guide</a> for more details.',
+        category="warning",
+        roles=["Admin"],
+        html=True,
+      )
+    ]
+  pod_template_file.yaml: "\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: placeholder-name\n
+    \ labels:\n    tier: airflow\n    component: worker\n    release: airflow-sandbox\n
+    \ annotations:\n    cluster-autoscaler.kubernetes.io/safe-to-evict: \"false\"\nspec:\n
+    \ initContainers:\n    \n    - name: git-sync-init\n      image: registry.k8s.io/git-sync/git-sync:v4.3.0\n
+    \     imagePullPolicy: IfNotPresent\n      securityContext:\n        runAsUser:
+    65533\n      envFrom:  \n        []\n      env:\n        - name: GIT_SYNC_REV\n
+    \         value: \"HEAD\"\n        - name: GITSYNC_REF\n          value: \"v2-2-stable\"\n
+    \       - name: GIT_SYNC_BRANCH\n          value: \"v2-2-stable\"\n        - name:
+    GIT_SYNC_REPO\n          value: \"https://github.com/apache/airflow.git\"\n        -
+    name: GITSYNC_REPO\n          value: \"https://github.com/apache/airflow.git\"\n
+    \       - name: GIT_SYNC_DEPTH\n          value: \"1\"\n        - name: GITSYNC_DEPTH\n
+    \         value: \"1\"\n        - name: GIT_SYNC_ROOT\n          value: \"/git\"\n
+    \       - name: GITSYNC_ROOT\n          value: \"/git\"\n        - name: GIT_SYNC_DEST\n
+    \         value: \"repo\"\n        - name: GITSYNC_LINK\n          value: \"repo\"\n
+    \       - name: GIT_SYNC_ADD_USER\n          value: \"true\"\n        - name:
+    GITSYNC_ADD_USER\n          value: \"true\"\n        - name: GITSYNC_PERIOD\n
+    \         value: \"5s\"\n        - name: GIT_SYNC_MAX_SYNC_FAILURES\n          value:
+    \"0\"\n        - name: GITSYNC_MAX_FAILURES\n          value: \"0\"\n        -
+    name: GIT_SYNC_ONE_TIME\n          value: \"true\"\n        - name: GITSYNC_ONE_TIME\n
+    \         value: \"true\"\n      resources: \n        {}\n      volumeMounts:\n
+    \     - name: dags\n        mountPath: /git\n  containers:\n    - envFrom:      \n
+    \       []\n      env:\n        - name: AIRFLOW__CORE__EXECUTOR\n          value:
+    LocalExecutor      \n        # Hard Coded Airflow Envs\n        - name: AIRFLOW__CORE__FERNET_KEY\n
+    \         valueFrom:\n            secretKeyRef:\n              name: airflow-sandbox-fernet-key\n
+    \             key: fernet-key\n        - name: AIRFLOW_HOME\n          value:
+    /opt/airflow\n        # For Airflow <2.3, backward compatibility; moved to [database]
+    in 2.3\n        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN\n          valueFrom:\n
+    \           secretKeyRef:\n              name: airflow-sandbox-metadata\n              key:
+    connection\n        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN\n          valueFrom:\n
+    \           secretKeyRef:\n              name: airflow-sandbox-metadata\n              key:
+    connection\n        - name: AIRFLOW_CONN_AIRFLOW_DB\n          valueFrom:\n            secretKeyRef:\n
+    \             name: airflow-sandbox-metadata\n              key: connection\n
+    \       - name: AIRFLOW__WEBSERVER__SECRET_KEY\n          valueFrom:\n            secretKeyRef:\n
+    \             name: airflow-sandbox-webserver-secret-key\n              key: webserver-secret-key
+    \     \n        # Dynamically created environment variables\n        # Dynamically
+    created secret envs\n        \n        # Extra env      \n      image: apache/airflow:2.10.5\n
+    \     imagePullPolicy: IfNotPresent\n      securityContext: \n        allowPrivilegeEscalation:
+    false\n        capabilities:\n          drop:\n            - ALL\n      name:
+    base\n      resources:\n        {}\n      volumeMounts:\n        - mountPath:
+    \"/opt/airflow/logs\"\n          name: logs\n        - name: config\n          mountPath:
+    \"/opt/airflow/airflow.cfg\"\n          subPath: airflow.cfg\n          readOnly:
+    true\n        - name: config\n          mountPath: \"/opt/airflow/config/airflow_local_settings.py\"\n
+    \         subPath: airflow_local_settings.py\n          readOnly: true\n        -
+    name: dags\n          mountPath: /opt/airflow/dags\n          readOnly: True\n
+    \ restartPolicy: Never\n  securityContext: \n    runAsUser: 50000\n    fsGroup:
+    0\n  nodeSelector:\n    {}\n  affinity:\n    {}\n  terminationGracePeriodSeconds:
+    600\n  tolerations:\n    []\n  topologySpreadConstraints:\n    []\n  serviceAccountName:
+    \"airflow-sandbox-worker\"\n  volumes:\n  - name: dags\n    emptyDir:\n      {}\n
+    \ - emptyDir:\n      {}\n    name: logs\n  - configMap:\n      name: airflow-sandbox-config\n
+    \   name: config"
+kind: ConfigMap
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: config
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-config
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+data:
+  mappings.yml: "# Licensed to the Apache Software Foundation (ASF) under one\n# or
+    more contributor license agreements.  See the NOTICE file\n# distributed with
+    this work for additional information\n# regarding copyright ownership.  The ASF
+    licenses this file\n# to you under the Apache License, Version 2.0 (the\n# \"License\");
+    you may not use this file except in compliance\n# with the License.  You may obtain
+    a copy of the License at\n#\n#   http://www.apache.org/licenses/LICENSE-2.0\n#\n#
+    Unless required by applicable law or agreed to in writing,\n# software distributed
+    under the License is distributed on an\n# \"AS IS\" BASIS, WITHOUT WARRANTIES
+    OR CONDITIONS OF ANY\n# KIND, either express or implied.  See the License for
+    the\n# specific language governing permissions and limitations\n# under the License.\n---\n#
+    \nmappings:\n  # Map dot separated stats to labels\n  - match: airflow.dagrun.dependency-check.*.*\n
+    \   name: \"airflow_dagrun_dependency_check\"\n    labels:\n      dag_id: \"$1\"\n\n
+    \ - match: airflow.operator_successes_(.*)\n    match_type: regex\n    name: \"airflow_operator_successes\"\n
+    \   labels:\n      operator: \"$1\"\n\n  - match: airflow.operator_failures_(.*)\n
+    \   match_type: regex\n    name: \"airflow_operator_failures\"\n    labels:\n
+    \     operator: \"$1\"\n\n  - match: airflow.scheduler_heartbeat\n    match_type:
+    regex\n    name: \"airflow_scheduler_heartbeat\"\n    labels:\n      type: counter\n\n
+    \ - match: airflow.dag_processor_heartbeat\n    match_type: regex\n    name: \"airflow_dag_processor_heartbeat\"\n
+    \   labels:\n      type: counter\n\n  - match: airflow.dag.*.*.duration\n    name:
+    \"airflow_task_duration\"\n    labels:\n      dag_id: \"$1\"\n      task_id: \"$2\"\n\n
+    \ - match: airflow.dagrun.duration.success.*\n    name: \"airflow_dagrun_duration\"\n
+    \   labels:\n      dag_id: \"$1\"\n\n  - match: airflow.dagrun.duration.failed.*\n
+    \   name: \"airflow_dagrun_failed\"\n    labels:\n      dag_id: \"$1\"\n\n  -
+    match: airflow.dagrun.schedule_delay.*\n    name: \"airflow_dagrun_schedule_delay\"\n
+    \   labels:\n      dag_id: \"$1\"\n\n  - match: airflow.dag_processing.last_runtime.*\n
+    \   name: \"airflow_dag_processing_last_runtime\"\n    labels:\n      dag_file:
+    \"$1\"\n\n  - match: airflow.dag_processing.last_run.seconds_ago.*\n    name:
+    \"airflow_dag_processing_last_run_seconds_ago\"\n    labels:\n      dag_file:
+    \"$1\"\n\n  - match: airflow.pool.open_slots.*\n    name: \"airflow_pool_open_slots\"\n
+    \   labels:\n      pool: \"$1\"\n\n  - match: airflow.pool.used_slots.*\n    name:
+    \"airflow_pool_used_slots\"\n    labels:\n      pool: \"$1\"\n\n  - match: airflow.pool.starving_tasks.*\n
+    \   name: \"airflow_pool_starving_tasks\"\n    labels:\n      pool: \"$1\"\n\n
+    \ - match: airflow.executor.open_slots.*\n    name: \"airflow_executor_open_slots\"\n
+    \   labels:\n      executor: \"$1\"\n\n  - match: airflow.executor.queued_tasks.*\n
+    \   name: \"airflow_executor_queued_tasks\"\n    labels:\n      executor: \"$1\"\n\n
+    \ - match: airflow.executor.running_tasks.*\n    name: \"airflow_executor_running_tasks\"\n
+    \   labels:\n      executor: \"$1\"\n\n  - match: airflow.ti.running.*.*.*\n    name:
+    \"airflow_ti_running\"\n    labels:\n      queue: \"$1\"\n      dag_id: \"$2\"\n
+    \     task_id: \"$3\""
+kind: ConfigMap
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: config
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-statsd
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+data:
+  GITSYNC_ADD_USER: "true"
+  GITSYNC_BRANCH: master
+  GITSYNC_DEPTH: "1"
+  GITSYNC_LINK: repo
+  GITSYNC_MAX_SYNC_FAILURES: "5"
+  GITSYNC_ONE_TIME: "false"
+  GITSYNC_PERMISSIONS: "0777"
+  GITSYNC_REPO: https://github.com/oyindonesia/data-engineering-airflow.git
+  GITSYNC_ROOT: /git
+  GITSYNC_SYNC_TIMEOUT: 180s
+  GITSYNC_USERNAME: oybot
+  GITSYNC_WAIT: "120"
+kind: ConfigMap
+metadata:
+  name: git-sync-settings
+  namespace: airflow-sandbox
+---
+apiVersion: v1
+data:
+  connection: JSFzKDxuaWw+KQ==
+kind: Secret
+metadata:
+  annotations:
+    helm.sh/hook: pre-install
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "0"
+  labels:
+    chart: airflow
+    component: redis
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-broker-url
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  fernet-key: YjBZNE1sUlJlREZRYnpobU1rWjJWR0Y1VTBkck1XbFVTakEyWWpBMGRrMD0=
+kind: Secret
+metadata:
+  annotations:
+    helm.sh/hook: pre-install
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "0"
+  labels:
+    chart: airflow
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-fernet-key
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  connection: cG9zdGdyZXNxbDovL2FpcmZsb3c6YWlyZmxvd0BhaXJmbG93LXNhbmRib3gtcG9zdGdyZXNxbC5haXJmbG93LXNhbmRib3g6NTQzMi9haXJmbG93P3NzbG1vZGU9ZGlzYWJsZQ==
+kind: Secret
+metadata:
+  labels:
+    chart: airflow
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-metadata
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  password: YWlyZmxvdw==
+  postgres-password: YWlyZmxvdw==
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 16.1.0
+    helm.sh/chart: postgresql-13.2.24
+  name: airflow-sandbox-postgresql
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  webserver-secret-key: VDNOdmJ6TXdSM0pVZFdkVGFFWkRWekI0T1RkNmMxVkxaSE5IWW05clNWZz0=
+kind: Secret
+metadata:
+  labels:
+    chart: airflow
+    component: webserver
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-webserver-secret-key
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  gcp_sakey.json: |
+    ewogIHR5cGU6IHNlcnZpY2VfYWNjb3VudCwKICBwcm9qZWN0X2lkOiBkYXRhLTI5ODkwNCwKICBw
+    cml2YXRlX2tleV9pZDogMDBiMThiMTAyMTVhODRmNDYwOGNhMjA4MzQ2OWNlZDdhOWM4Mzk2ZSwK
+    ICBwcml2YXRlX2tleTogLS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tbk1JSUV2QUlCQURBTkJn
+    a3Foa2lHOXcwQkFRRUZBQVNDQktZd2dnU2lBZ0VBQW9JQkFRQ25PaUNDTjFuT0s3VDRueUp0SEFl
+    WmdXY3JBTHVFR3g5VTM5aGwzNnZKZEI4dlpza2V2YldVMllBRzlLU2RXWkhqU0VUZkZVSHZ1R0RD
+    TG51cmx1WDB6MlkrWEJBR09OZjlVdFFVNzRMbWtqRHB1NGpueVFOT01MbVpUeVI1aGt5ejl6cnBV
+    dFNER0lzVjlkblFZRHl5cnREbnBVTFpwZ2VDandzdndodU52K1hLVEZYcGhUWm5lQm1BYnB5VnlO
+    UXdkbEY1SVV2dVVleTRKYzhuK1ZvSG80QUhNcTNTMGp0RjlRWVdSVXdaL1NPYWhNdU5xZXBzMUcv
+    SG5NU1NOalY4c1hlZEE1MkVabmtKdVhONG5udyswb2M2Nld2OSs0K2MwWW5haUZOTkhZQWd1bXFy
+    bmJrOWhoeFJIaEoxNVBrOGJ4UDdvN3IyeEVoMHhlZ25qbjlqWWxFQzVwQWdNQkFBRUNnZ0VBSTFo
+    QUVEMjZNNzhkcWpxZVJURVQyL2dHaUQyd1RxSlVnTlk1ZGxUWWdveTRuQzR4b3BkMnhsMzlOeHNr
+    b3VSUVZ6RkthenMvT3pkbGJnMkVGT2R5WE0vbVQwVW52Z0xRTTN0cVBvaG1QRzd1Rm44c2xjN3c3
+    YWtUUldIS3BBdmNjT28zajZLejYzeDN3ejI0NVJmcCtXV25tdFoySTVFeHBYTXg3eVhYY3U2T2dT
+    bnVFQ2xDWThZRnhBRTQrNm5UclB2SVp4MWwwUGx0SGpmeHFzNU1aQWNjVndWQUhGZnZLTUZBUE9O
+    a1p6VUlNNlVuM3pTeFFabFowWU5HczBnQVZoS3ZjMVNCSHlNZWNJSUxhVy9RdC9rNlUyQnd6L1M4
+    bGQxVzFITllsd0N1OTIzb240YzBudDNOZ1l6Q1N6eTI1eklhZmNKajNzNktXbXNXVUxrNEhTeGlr
+    clFLQmdRRFVzK3hQUnhrV2JpanF4Qk1ablh1Z1lBeEV0b0NxTkRUaGFsNUN0SDN6VUlxNzdtdmhw
+    U1ZhMWVwYUVKTmlEYTdBWmo0SkkxY1dSVFVRZWUwelFuN1hNWkpGZ1JBeUc0MXFEQkxyVWRGTkpI
+    VnhYNlZ0SmdqRC9qYnJiWmNWaDJDWk9yZFMzWVllVXRsVXI2U0tFdW5HaXVXUU1BMTBmQmV5bUtm
+    aVUzT0ZrWFFsUUtCZ1FESlJHN3dsRmRnbVJyQ0taZHEvM2k0cHdqbHYzK2hYTUJLblhpZGVoc2Fz
+    bXM0eWhBWTZVRytuNjJXTVQzUlU1WGczTUF5QVRlU05nUXgxdHB4TG4wTVNkaTBMWDJiS3lYK2hu
+    VStkSzlKcTUvaG9kM1F2K291TkNPVHgrLzFxRlN4akRFRWYzekZseGNJbk05bVdMNWV1UE1pV3pT
+    WVQwOHRYWW5JRzJpUFZaTmhRS0JnRzFJcERsM1JpU0lKTzI2SURZQTFTN0JKS3BVaUloQUtwd2hF
+    MnhmcVRzMU5zSi9OUEtqbmc3RnFjcnNpVXp2eXNGL3hvL2JZSHRJdzZMYmdrdThsa09WeUR1MXV0
+    bnpKaVg2NENNWVFWSm5pM0ovcXk5eGZuTXRRZnBrTENRYmtqNG9OTmlXaUxvN3h2NEQ0SDR3aFUy
+    ZUF4RkpDU2RQVys5ajBSeHJBRU1ZcWhBb0dBWnBkcG5iVnhRQmI5Rk1uOTgzVitIcTZnSkV3TkFE
+    WUozeWZDZ1pNQ1NlTjBZQ2d2ZUdNOXplc2EwcG9iQnA1eW9ZSWt2bmRoOCtSeHJtdlFIdVBXWGJE
+    SWdNZ2VXSlFnamY4OTRPNGRnNUhtRjE4bzhBVkRXM1hjUkxIL2tOclRBUVdTM3RuWVZSYXEwWlFG
+    NWZwUHh4ZHJFcEZpVlFLWDhtQVU0Q0VJZFRlTHZrQ2dZQnNyR3NDanhLaCs1WVp1V2RiSGlDVm5C
+    SEl1YThTblA1elIxUFdkcEZodXVCdC9YT05UcUxrS0dvWVY3eUhmQ284VXNMWlovT3FlbkgzWUhH
+    UFF4RnhIbnp6VUt2eXBWaG11d2lQK1p2UzNGa3FsVDZ6ZU9uUE5KNkw0Yk0zWXpCT1lMUEVJZTVm
+    S2tVSjM2U2NReFN6MnFuamg0dmpOczFwMWZzdzVpUUgrUlkyZz09bi0tLS0tRU5EIFBSSVZBVEUg
+    S0VZLS0tLS1uLAogIGNsaWVudF9lbWFpbDogZGF0YS1lbmdpbmVlckBkYXRhLTI5ODkwNC5pYW0u
+    Z3NlcnZpY2VhY2NvdW50LmNvbSwKICBjbGllbnRfaWQ6IDEwMjE0NDcwOTkzNzcyODE4MTc4OSwK
+    ICBhdXRoX3VyaTogaHR0cHM6Ly9hY2NvdW50cy5nb29nbGUuY29tL28vb2F1dGgyL2F1dGgsCiAg
+    dG9rZW5fdXJpOiBodHRwczovL29hdXRoMi5nb29nbGVhcGlzLmNvbS90b2tlbiwKICBhdXRoX3By
+    b3ZpZGVyX3g1MDlfY2VydF91cmw6IGh0dHBzOi8vd3d3Lmdvb2dsZWFwaXMuY29tL29hdXRoMi92
+    MS9jZXJ0cywKICBjbGllbnRfeDUwOV9jZXJ0X3VybDogaHR0cHM6Ly93d3cuZ29vZ2xlYXBpcy5j
+    b20vcm9ib3QvdjEvbWV0YWRhdGEveDUwOS9kYXRhLWVuZ2luZWVyJTQwZGF0YS0yOTg5MDQuaWFt
+    LmdzZXJ2aWNlYWNjb3VudC5jb20KfQo=
+kind: Secret
+metadata:
+  labels:
+    chart: airflow
+    component: webserver
+    heritage: Helm
+  name: gcp-credentials
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+data:
+  GITSYNC_PASSWORD: |
+    Z2l0aHViX3BhdF8xMUFJQ1oyV0EwTXdrN2RTeGdZaVhuX1pLZzBtdDFHcUtyclE5RVZENWhTUkFWcXdMa0hOQ2RnMkR1cTJ1bEw0YmFXWkZET1dZRGU4NGhRSlVjCg==
+kind: Secret
+metadata:
+  labels:
+    chart: airflow
+    component: scheduler
+    heritage: Helm
+  name: git-sync-secret
+  namespace: airflow-sandbox
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 16.1.0
+    helm.sh/chart: postgresql-13.2.24
+  name: airflow-sandbox-postgresql
+  namespace: airflow-sandbox
+spec:
+  ports:
+  - name: tcp-postgresql
+    nodePort: null
+    port: 5432
+    targetPort: tcp-postgresql
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/name: postgresql
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 16.1.0
+    helm.sh/chart: postgresql-13.2.24
+  name: airflow-sandbox-postgresql-hl
+  namespace: airflow-sandbox
+spec:
+  clusterIP: None
+  ports:
+  - name: tcp-postgresql
+    port: 5432
+    targetPort: tcp-postgresql
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/name: postgresql
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: scheduler
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-scheduler
+  namespace: airflow-sandbox
+spec:
+  clusterIP: None
+  ports:
+  - name: task-logs
+    port: 8793
+    protocol: TCP
+    targetPort: 8793
+  selector:
+    component: scheduler
+    release: airflow-sandbox
+    tier: airflow
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9102"
+    prometheus.io/scrape: "true"
+  labels:
+    chart: airflow-1.16.0
+    component: statsd
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-statsd
+  namespace: airflow-sandbox
+spec:
+  ports:
+  - name: statsd-ingest
+    port: 9125
+    protocol: UDP
+    targetPort: 9125
+  - name: statsd-scrape
+    port: 9102
+    protocol: TCP
+    targetPort: 9102
+  selector:
+    component: statsd
+    release: airflow-sandbox
+    tier: airflow
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: webserver
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-webserver
+  namespace: airflow-sandbox
+spec:
+  ports:
+  - name: airflow-ui
+    nodePort: 30082
+    port: 8082
+    targetPort: 8080
+  selector:
+    component: webserver
+    release: airflow-sandbox
+    tier: airflow
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: statsd
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-statsd
+  namespace: airflow-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: statsd
+      release: airflow-sandbox
+      tier: airflow
+  template:
+    metadata:
+      labels:
+        component: statsd
+        release: airflow-sandbox
+        tier: airflow
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - --statsd.mapping-config=/etc/statsd-exporter/mappings.yml
+        image: quay.io/prometheus/statsd-exporter:v0.28.0
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9102
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        name: statsd
+        ports:
+        - containerPort: 9125
+          name: statsd-ingest
+          protocol: UDP
+        - containerPort: 9102
+          name: statsd-scrape
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9102
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /etc/statsd-exporter/mappings.yml
+          name: config
+          subPath: mappings.yml
+      nodeSelector: {}
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 65534
+      serviceAccountName: airflow-sandbox-statsd
+      terminationGracePeriodSeconds: 30
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-statsd
+        name: config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: webserver
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-webserver
+  namespace: airflow-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: webserver
+      release: airflow-sandbox
+      tier: airflow
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/airflow-config: 362f1e41cf07ddfcf2a9e0804963b9d389f60c8055166058b5b12d31d102be22
+        checksum/extra-configmaps: e862ea47e13e634cf17d476323784fa27dac20015550c230953b526182f5cac8
+        checksum/extra-secrets: e9582fdd622296c976cbc10a5ba7d6702c28a24fe80795ea5b84ba443a56c827
+        checksum/metadata-secret: e41e587c2930a9c93c352cb55795a8fce6b2062784089d11e086793d876dd7a7
+        checksum/pgbouncer-config-secret: 1dae2adc757473469686d37449d076b0c82404f61413b58ae68b3c5e99527688
+        checksum/webserver-config: 2f3fdfd294a37094d2abee43b2b09888a5c195ee03414996bf99a4681658af94
+        checksum/webserver-secret-key: 06eee9f6caa38a184bb2f3f414bfa0f7cbc725c997e644bc1728c9cedaed99f4
+      labels:
+        component: webserver
+        release: airflow-sandbox
+        tier: airflow
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  component: webserver
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - args:
+        - bash
+        - -c
+        - exec airflow webserver
+        env:
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+        name: webserver
+        ports:
+        - containerPort: 8080
+          name: airflow-ui
+        readinessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        startupProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 20
+        volumeMounts:
+        - mountPath: /opt/airflow/pod_templates/pod_template_file.yaml
+          name: config
+          readOnly: true
+          subPath: pod_template_file.yaml
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+      initContainers:
+      - args:
+        - airflow
+        - db
+        - check-migrations
+        - --migration-wait-timeout=60
+        env:
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        name: wait-for-airflow-migrations
+        resources:
+          limits:
+            cpu: 500m
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+      nodeSelector: {}
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 0
+        runAsUser: 50000
+      serviceAccountName: airflow-sandbox-webserver
+      terminationGracePeriodSeconds: 30
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-config
+        name: config
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    app.kubernetes.io/component: primary
+    app.kubernetes.io/instance: airflow-sandbox
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/version: 16.1.0
+    helm.sh/chart: postgresql-13.2.24
+  name: airflow-sandbox-postgresql
+  namespace: airflow-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: primary
+      app.kubernetes.io/instance: airflow-sandbox
+      app.kubernetes.io/name: postgresql
+  serviceName: airflow-sandbox-postgresql-hl
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: primary
+        app.kubernetes.io/instance: airflow-sandbox
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: postgresql
+        app.kubernetes.io/version: 16.1.0
+        helm.sh/chart: postgresql-13.2.24
+      name: airflow-sandbox-postgresql
+    spec:
+      affinity:
+        nodeAffinity: null
+        podAffinity: null
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: primary
+                  app.kubernetes.io/instance: airflow-sandbox
+                  app.kubernetes.io/name: postgresql
+              topologyKey: kubernetes.io/hostname
+            weight: 1
+      containers:
+      - env:
+        - name: BITNAMI_DEBUG
+          value: "false"
+        - name: POSTGRESQL_PORT_NUMBER
+          value: "5432"
+        - name: POSTGRESQL_VOLUME_DIR
+          value: /bitnami/postgresql
+        - name: PGDATA
+          value: /bitnami/postgresql/data
+        - name: POSTGRES_USER
+          value: airflow
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: password
+              name: airflow-sandbox-postgresql
+        - name: POSTGRES_POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: postgres-password
+              name: airflow-sandbox-postgresql
+        - name: POSTGRES_DATABASE
+          value: airflow
+        - name: POSTGRESQL_ENABLE_LDAP
+          value: "no"
+        - name: POSTGRESQL_ENABLE_TLS
+          value: "no"
+        - name: POSTGRESQL_LOG_HOSTNAME
+          value: "false"
+        - name: POSTGRESQL_LOG_CONNECTIONS
+          value: "false"
+        - name: POSTGRESQL_LOG_DISCONNECTIONS
+          value: "false"
+        - name: POSTGRESQL_PGAUDIT_LOG_CATALOG
+          value: "off"
+        - name: POSTGRESQL_CLIENT_MIN_MESSAGES
+          value: error
+        - name: POSTGRESQL_SHARED_PRELOAD_LIBRARIES
+          value: pgaudit
+        image: docker.io/bitnami/postgresql:16.1.0-debian-11-r15
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "airflow" -d "dbname=airflow" -h 127.0.0.1 -p 5432
+          failureThreshold: 6
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: postgresql
+        ports:
+        - containerPort: 5432
+          name: tcp-postgresql
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - -e
+            - |
+              exec pg_isready -U "airflow" -d "dbname=airflow" -h 127.0.0.1 -p 5432
+              [ -f /opt/bitnami/postgresql/tmp/.initialized ] || [ -f /bitnami/postgresql/.initialized ]
+          failureThreshold: 6
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          limits:
+            cpu: 200m
+            memory: 512Mi
+          requests:
+            cpu: 50m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: dshm
+        - mountPath: /bitnami/postgresql
+          name: data
+      hostIPC: false
+      hostNetwork: false
+      securityContext:
+        fsGroup: 1001
+      serviceAccountName: default
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: dshm
+  updateStrategy:
+    rollingUpdate: {}
+    type: RollingUpdate
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 8Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: scheduler
+    executor: LocalKubernetesExecutor
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-scheduler
+  namespace: airflow-sandbox
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: scheduler
+      release: airflow-sandbox
+      tier: airflow
+  serviceName: airflow-sandbox-scheduler
+  template:
+    metadata:
+      annotations:
+        checksum/airflow-config: 362f1e41cf07ddfcf2a9e0804963b9d389f60c8055166058b5b12d31d102be22
+        checksum/extra-configmaps: e862ea47e13e634cf17d476323784fa27dac20015550c230953b526182f5cac8
+        checksum/extra-secrets: e9582fdd622296c976cbc10a5ba7d6702c28a24fe80795ea5b84ba443a56c827
+        checksum/metadata-secret: e41e587c2930a9c93c352cb55795a8fce6b2062784089d11e086793d876dd7a7
+        checksum/pgbouncer-config-secret: 1dae2adc757473469686d37449d076b0c82404f61413b58ae68b3c5e99527688
+        checksum/result-backend-secret: 98a68f230007cfa8f5d3792e1aff843a76b0686409e4a46ab2f092f6865a1b71
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+      labels:
+        component: scheduler
+        release: airflow-sandbox
+        tier: airflow
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  component: scheduler
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - args:
+        - bash
+        - -c
+        - exec airflow scheduler
+        env:
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - |
+              CONNECTION_CHECK_MAX_COUNT=0 AIRFLOW__LOGGING__LOGGING_LEVEL=ERROR exec /entrypoint \
+              airflow jobs check --job-type SchedulerJob --local
+          failureThreshold: 5
+          initialDelaySeconds: 10
+          periodSeconds: 60
+          timeoutSeconds: 20
+        name: scheduler
+        ports:
+        - containerPort: 8793
+          name: worker-logs
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        startupProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - |
+              CONNECTION_CHECK_MAX_COUNT=0 AIRFLOW__LOGGING__LOGGING_LEVEL=ERROR exec /entrypoint \
+              airflow jobs check --job-type SchedulerJob --local
+          failureThreshold: 6
+          initialDelaySeconds: 0
+          periodSeconds: 10
+          timeoutSeconds: 20
+        volumeMounts:
+        - mountPath: /opt/airflow/pod_templates/pod_template_file.yaml
+          name: config
+          readOnly: true
+          subPath: pod_template_file.yaml
+        - mountPath: /opt/airflow/logs
+          name: logs
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+        - mountPath: /opt/airflow/dags
+          name: dags
+          readOnly: true
+      - env:
+        - name: GIT_SYNC_REV
+          value: HEAD
+        - name: GITSYNC_REF
+          value: v2-2-stable
+        - name: GIT_SYNC_BRANCH
+          value: v2-2-stable
+        - name: GIT_SYNC_REPO
+          value: https://github.com/apache/airflow.git
+        - name: GITSYNC_REPO
+          value: https://github.com/apache/airflow.git
+        - name: GIT_SYNC_DEPTH
+          value: "1"
+        - name: GITSYNC_DEPTH
+          value: "1"
+        - name: GIT_SYNC_ROOT
+          value: /git
+        - name: GITSYNC_ROOT
+          value: /git
+        - name: GIT_SYNC_DEST
+          value: repo
+        - name: GITSYNC_LINK
+          value: repo
+        - name: GIT_SYNC_ADD_USER
+          value: "true"
+        - name: GITSYNC_ADD_USER
+          value: "true"
+        - name: GITSYNC_PERIOD
+          value: 5s
+        - name: GIT_SYNC_MAX_SYNC_FAILURES
+          value: "0"
+        - name: GITSYNC_MAX_FAILURES
+          value: "0"
+        envFrom: []
+        image: registry.k8s.io/git-sync/git-sync:v4.3.0
+        imagePullPolicy: IfNotPresent
+        name: git-sync
+        resources: {}
+        securityContext:
+          runAsUser: 65533
+        volumeMounts:
+        - mountPath: /git
+          name: dags
+      initContainers:
+      - args:
+        - airflow
+        - db
+        - check-migrations
+        - --migration-wait-timeout=60
+        env:
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        name: wait-for-airflow-migrations
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+      - env:
+        - name: GIT_SYNC_REV
+          value: HEAD
+        - name: GITSYNC_REF
+          value: v2-2-stable
+        - name: GIT_SYNC_BRANCH
+          value: v2-2-stable
+        - name: GIT_SYNC_REPO
+          value: https://github.com/apache/airflow.git
+        - name: GITSYNC_REPO
+          value: https://github.com/apache/airflow.git
+        - name: GIT_SYNC_DEPTH
+          value: "1"
+        - name: GITSYNC_DEPTH
+          value: "1"
+        - name: GIT_SYNC_ROOT
+          value: /git
+        - name: GITSYNC_ROOT
+          value: /git
+        - name: GIT_SYNC_DEST
+          value: repo
+        - name: GITSYNC_LINK
+          value: repo
+        - name: GIT_SYNC_ADD_USER
+          value: "true"
+        - name: GITSYNC_ADD_USER
+          value: "true"
+        - name: GITSYNC_PERIOD
+          value: 5s
+        - name: GIT_SYNC_MAX_SYNC_FAILURES
+          value: "0"
+        - name: GITSYNC_MAX_FAILURES
+          value: "0"
+        - name: GIT_SYNC_ONE_TIME
+          value: "true"
+        - name: GITSYNC_ONE_TIME
+          value: "true"
+        envFrom: []
+        image: registry.k8s.io/git-sync/git-sync:v4.3.0
+        imagePullPolicy: IfNotPresent
+        name: git-sync-init
+        resources: {}
+        securityContext:
+          runAsUser: 65533
+        volumeMounts:
+        - mountPath: /git
+          name: dags
+      nodeSelector: {}
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 0
+        runAsUser: 50000
+      serviceAccountName: airflow-sandbox-scheduler
+      terminationGracePeriodSeconds: 10
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-config
+        name: config
+      - emptyDir: {}
+        name: dags
+  volumeClaimTemplates:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: logs
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-weight: "2"
+  labels:
+    chart: airflow-1.16.0
+    component: create-user-job
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-create-user
+  namespace: airflow-sandbox
+spec:
+  template:
+    metadata:
+      labels:
+        component: create-user-job
+        release: airflow-sandbox
+        tier: airflow
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - bash
+        - -c
+        - |-
+          exec \
+          airflow users create "$@"
+        - --
+        - -r
+        - Admin
+        - -u
+        - admin
+        - -e
+        - admin@example.com
+        - -f
+        - admin
+        - -l
+        - user
+        - -p
+        - admin
+        env:
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        name: create-user
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+      nodeSelector: {}
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroup: 0
+        runAsUser: 50000
+      serviceAccountName: airflow-sandbox-create-user-job
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-config
+        name: config
+  ttlSecondsAfterFinished: 300
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    helm.sh/hook-weight: "1"
+  labels:
+    chart: airflow-1.16.0
+    component: run-airflow-migrations
+    heritage: Helm
+    release: airflow-sandbox
+    tier: airflow
+  name: airflow-sandbox-run-airflow-migrations
+  namespace: airflow-sandbox
+spec:
+  template:
+    metadata:
+      labels:
+        component: run-airflow-migrations
+        release: airflow-sandbox
+        tier: airflow
+    spec:
+      affinity: {}
+      containers:
+      - args:
+        - bash
+        - -c
+        - |-
+          exec \
+          airflow db migrate
+        env:
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: AIRFLOW__CORE__FERNET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: fernet-key
+              name: airflow-sandbox-fernet-key
+        - name: AIRFLOW_HOME
+          value: /opt/airflow
+        - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW_CONN_AIRFLOW_DB
+          valueFrom:
+            secretKeyRef:
+              key: connection
+              name: airflow-sandbox-metadata
+        - name: AIRFLOW__WEBSERVER__SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              key: webserver-secret-key
+              name: airflow-sandbox-webserver-secret-key
+        envFrom: []
+        image: asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow:latest
+        imagePullPolicy: IfNotPresent
+        name: run-airflow-migrations
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /opt/airflow/airflow.cfg
+          name: config
+          readOnly: true
+          subPath: airflow.cfg
+        - mountPath: /opt/airflow/config/airflow_local_settings.py
+          name: config
+          readOnly: true
+          subPath: airflow_local_settings.py
+      nodeSelector: {}
+      restartPolicy: OnFailure
+      securityContext:
+        fsGroup: 0
+        runAsUser: 50000
+      serviceAccountName: airflow-sandbox-migrate-database-job
+      tolerations: []
+      topologySpreadConstraints: []
+      volumes:
+      - configMap:
+          name: airflow-sandbox-config
+        name: config
+  ttlSecondsAfterFinished: 300

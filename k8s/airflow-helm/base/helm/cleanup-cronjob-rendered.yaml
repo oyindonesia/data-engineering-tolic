@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    component: airflow-cleanup-pods
+    heritage: Helm
+    release: airflow-dev
+    tier: airflow
+  name: airflow-dev-cleanup
+  namespace: airflow-dev
+spec:
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          annotations:
+            sidecar.istio.io/inject: "false"
+          labels:
+            component: airflow-cleanup-pods
+            release: airflow-dev
+            tier: airflow
+        spec:
+          affinity: {}
+          containers:
+            - args:
+                - bash
+                - -c
+                - exec airflow kubernetes cleanup-pods --namespace=airflow-dev
+              env:
+                - name: AIRFLOW__CORE__FERNET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: fernet-key
+                      name: airflow-dev-fernet-key
+                - name: AIRFLOW_HOME
+                  value: /opt/airflow
+                - name: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+                  valueFrom:
+                    secretKeyRef:
+                      key: connection
+                      name: airflow-dev-metadata
+                - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+                  valueFrom:
+                    secretKeyRef:
+                      key: connection
+                      name: airflow-dev-metadata
+                - name: AIRFLOW_CONN_AIRFLOW_DB
+                  valueFrom:
+                    secretKeyRef:
+                      key: connection
+                      name: airflow-dev-metadata
+                - name: AIRFLOW__WEBSERVER__SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      key: webserver-secret-key
+                      name: airflow-dev-webserver-secret-key
+              image: apache/airflow:2.10.5
+              imagePullPolicy: IfNotPresent
+              name: airflow-cleanup-pods
+              resources: {}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - mountPath: /opt/airflow/airflow.cfg
+                  name: config
+                  readOnly: true
+                  subPath: airflow.cfg
+                - mountPath: /opt/airflow/config/airflow_local_settings.py
+                  name: config
+                  readOnly: true
+                  subPath: airflow_local_settings.py
+          nodeSelector: {}
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 0
+            runAsUser: 50000
+          serviceAccountName: airflow-dev-cleanup
+          tolerations: []
+          topologySpreadConstraints: []
+          volumes:
+            - configMap:
+                name: airflow-dev-config
+              name: config
+  schedule: '*/15 * * * *'

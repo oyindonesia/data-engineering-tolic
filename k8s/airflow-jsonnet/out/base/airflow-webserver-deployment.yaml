@@ -1,0 +1,85 @@
+{
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "metadata": {
+      "name": "airflow-webserver",
+      "namespace": "airflow-sandbox"
+   },
+   "spec": {
+      "replicas": 1,
+      "selector": {
+         "matchLabels": {
+            "app": "airflow"
+         }
+      },
+      "template": {
+         "metadata": {
+            "labels": {
+               "app": "airflow"
+            }
+         },
+         "spec": {
+            "containers": [
+               {
+                  "args": [
+                     "webserver"
+                  ],
+                  "env": [
+                     {
+                        "name": "AIRFLOW__CORE__EXECUTOR",
+                        "value": "LocalExecutor"
+                     },
+                     {
+                        "name": "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN",
+                        "value": "postgresql+psycopg2://airflow:airflow@postgres/airflow"
+                     },
+                     {
+                        "name": "AIRFLOW__CELERY__RESULT_BACKEND",
+                        "value": "db+postgresql://airflow:airflow@postgres/airflow"
+                     },
+                     {
+                        "name": "AIRFLOW__WEBSERVER__EXPOSE_CONFIG",
+                        "value": "True"
+                     },
+                     {
+                        "name": "AIRFLOW__METRICS__STATSD_ON",
+                        "value": "True"
+                     },
+                     {
+                        "name": "AIRFLOW__METRICS__STATSD_PREFIX",
+                        "value": "airflow"
+                     },
+                     {
+                        "name": "AIRFLOW__METRICS__STATSD_HOST",
+                        "value": "statsd-exporter.observability.svc"
+                     },
+                     {
+                        "name": "AIRFLOW__METRICS__STATSD_PORT",
+                        "value": "8125"
+                     },
+                     {
+                        "name": "OTEL_TRACES_EXPORTER",
+                        "value": "otlp"
+                     },
+                     {
+                        "name": "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+                        "value": "http://tempo.observability.svc:4317"
+                     },
+                     {
+                        "name": "OTEL_SERVICE_NAME",
+                        "value": "airflow"
+                     }
+                  ],
+                  "image": "asia-southeast2-docker.pkg.dev/data-298904/dataeng-images/airflow",
+                  "name": "airflow-webserver",
+                  "ports": [
+                     {
+                        "containerPort": 8080
+                     }
+                  ]
+               }
+            ]
+         }
+      }
+   }
+}

@@ -1,0 +1,87 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-dev
+    tier: airflow
+  name: airflow-dev-cleanup-role
+  namespace: airflow-dev
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - list
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-dev
+    tier: airflow
+  name: airflow-dev-pod-launcher-role
+  namespace: airflow-dev
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - list
+      - get
+      - patch
+      - watch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    verbs:
+      - create
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    chart: airflow-1.16.0
+    heritage: Helm
+    release: airflow-dev
+    tier: airflow
+  name: airflow-dev-pod-log-reader-role
+  namespace: airflow-dev
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - list
+      - get
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/log
+    verbs:
+      - get
+      - list

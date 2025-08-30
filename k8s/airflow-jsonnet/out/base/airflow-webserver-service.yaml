@@ -1,0 +1,19 @@
+{
+   "apiVersion": "v1",
+   "kind": "Service",
+   "metadata": {
+      "name": "airflow-web",
+      "namespace": "airflow-sandbox"
+   },
+   "spec": {
+      "ports": [
+         {
+            "port": 8080,
+            "targetPort": 8080
+         }
+      ],
+      "selector": {
+         "app": "airflow-webserver"
+      }
+   }
+}
