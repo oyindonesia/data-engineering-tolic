@@ -1,32 +1,30 @@
-import duckdb
+import os
 
-psql_conn = {
-    "host": "test-paywallet-postgres.cjrm58l5tj2q.ap-southeast-1.rds.amazonaws.com",
-    "port": "5432",
-    "username": "postgres",
-    "password": "changemeplease",
-    "name": "postgres",
-    "dbsystem": "postgresql",
-}
+import duckdb
+from dotenv import load_dotenv
+
+load_dotenv(".env.shared")
 
 duck_conn = duckdb.connect()
-
 
 install_psql_ext = f"""
         INSTALL postgres;
         LOAD postgres;
         ATTACH
-        '{psql_conn["dbsystem"]}://{psql_conn["username"]}:{psql_conn["password"]}@{psql_conn["host"]}:{psql_conn["port"]}/{psql_conn["name"]}'
+        '{os.getenv("PSQL_CONN")}'
         AS pg (TYPE POSTGRES, READ_ONLY);
     """
 
 install_httpfs_ext = """
         INSTALL httpfs;
         LOAD httpfs;
+"""
+
+create_gcs_secret = """
         CREATE SECRET (
             TYPE gcs,
-            KEY_ID 'GOOG1EN5XY62JQ572LAYT3MFRXBVYS7PQEUBZE2NEBI7VBCM32K2IDLSORBYW',
-            SECRET 'ftxOc367Icp47EDksX+AmZfPpexD+exxwl3f/g3e',
+            KEY_ID 'insert_key_id',
+            SECRET 'insert_secret',
             URL_STYLE path
         );
     """
