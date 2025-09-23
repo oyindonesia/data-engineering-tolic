@@ -10,6 +10,7 @@ wheels/
 .venv
 
 .env.secret
+.env.shared
 
 .env
 airflow-local-dev/

@@ -1,10 +1,15 @@
 import logging
+import os
 from datetime import datetime
 
+from dotenv import load_dotenv
 from pyspark.sql import SparkSession
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+load_dotenv(".env.shared")
 
 # Putting everything (i.e. configs, env vars, functions) to this script
 # Easier to debug, everything in one place (no need to jump to other files)
@@ -30,12 +35,11 @@ gcs_bucket = "oy-bi-raw-hub"
 # gcs_bucket = f"oy-bi-raw-hub/_backup/{psql_table}"
 
 POSTGRES_CONFIG = {
-    "user": "monitoring",
-    "password": "S&Fewc92vSSA#7GFXCb9mv&qI",
-    "host": "paywallet-postgres.main.danarapay.internal",
-    # "host": "10.135.4.86",
-    "port": "5432",
-    "database": "postgres",
+    "user": os.getenv("DEV_PSQL_USERNAME"),
+    "password": os.getenv("DEV_PSQL_PASSWORD"),
+    "host": os.getenv("DEV_PSQL_HOST"),
+    "port": os.getenv("DEV_PSQL_PORT"),
+    "database": os.getenv("DEV_PSQL_DATABASE"),
 }
 
 # Create SparkSession
