@@ -234,8 +234,6 @@ def duckdb_describe_query(
     query: str,
     psql_dstart: str,
     psql_dend: str,
-    psql_schema: str | None,
-    psql_table: str | None,
     indexes_df: pd.DataFrame,
 ) -> None:
     main_df = duck_conn.sql(
@@ -247,11 +245,6 @@ def duckdb_describe_query(
             "psql_dend": psql_dend,
         },
     ).df()
-
-    logging.info(f"Retrieved {len(main_df)} rows with {len(main_df.columns)} columns")
-    logging.info(
-        f"DataFrame memory usage: {main_df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
-    )
 
     ### show result of DESCRIBE from duckdb
     print("=== DuckDB Schema Description ===")
