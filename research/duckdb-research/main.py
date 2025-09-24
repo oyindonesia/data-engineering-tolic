@@ -5,7 +5,11 @@ from datetime import timedelta
 import duckdb
 import pendulum
 
-from helpers import DuckDBToBigQueryMapper, duckdb_getting_ids, duckdb_init_psql
+from helpers import (
+    duckdb_getting_ids,
+    duckdb_init_psql,
+    duckdb_describe_query,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,12 +29,12 @@ psql_table = "b2x_checkout_transaction"
 
 ### begin ingestion
 with open("main_query.sql") as main_query:
-    duck_conn = duckdb.connect()
+    db_conn = duckdb.connect()
 
     logging.info("setting up duckdb...")
 
     duckdb_setting = duckdb_init_psql(
-        duck_conn=duck_conn,
+        duck_conn=db_conn,
         psql_conn=os.getenv("PSQL_CONN"),
         gcs_hmac_access_key=os.getenv("GOOGLE_HMAC_ACCESS_KEY"),
         gcs_hmac_access_key_secret=os.getenv("GOOGLE_HMAC_ACCESS_KEY_SECRET"),
@@ -39,14 +43,15 @@ with open("main_query.sql") as main_query:
     logging.info("setup done.")
 
     indexes_df = duckdb_getting_ids(
-        duck_conn=duck_conn, psql_schema=psql_schema, psql_table=psql_table
+        duck_conn=db_conn, psql_schema=psql_schema, psql_table=psql_table
     )
 
     query_data = main_query.read().format(
         psql_schema=psql_schema, psql_table=psql_table
     )
 
-    main_df = duck_conn.sql(
+    logging.info("executing main query...")
+    main_df = db_conn.sql(
         query=query_data,
         params={
             "min_id": indexes_df["min_id"].iloc[0],
@@ -55,14 +60,27 @@ with open("main_query.sql") as main_query:
             "psql_dend": psql_dend,
         },
     ).df()
+    logging.info("query executed.")
 
-    logging.info("executing main query:")
-    print(query_data)
+    logging.info(f"Retrieved {len(main_df)} rows with {len(main_df.columns)} columns.")
+    logging.info(
+        f"DataFrame memory usage: {main_df.memory_usage(deep=True).sum() / 1024**2:.2f} MB"
+    )
 
-    logging.info("preview:")
+    # print(query_data)
+
+    logging.info("data preview:")
     print(main_df.head())
 
-    # logging.info("executing main query:")
+    logging.info("running DESCRIBE to query...")
+    duckdb_describe_query(
+        duck_conn=db_conn,
+        query=query_data,
+        psql_dstart=psql_dstart,
+        psql_dend=psql_dend,
+        indexes_df=indexes_df,
+    )
+
 
 # logging.info("executing main query:")
 # logging.info(f"{query_data}")
