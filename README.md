@@ -1,3 +1,3 @@
 # tolic (thinking out loud in code)
 
-brain dump output from my overthinking sessions
+brain dump from various overthinking sessions
