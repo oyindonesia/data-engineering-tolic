@@ -1,4 +1,11 @@
 import pandas as pd
+import duckdb
+import os
+import logging
+from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # Add the DuckDB to BigQuery mapper class
@@ -140,3 +147,125 @@ class DuckDBToBigQueryMapper:
         ddl += "\n);"
 
         return ddl
+
+
+def duckdb_init_psql(
+    duck_conn: duckdb.DuckDBPyConnection,
+    psql_conn: str | None,
+    gcs_hmac_access_key: str | None,
+    gcs_hmac_access_key_secret: str | None,
+) -> None:
+    try:
+        ### connect to postgres
+        install_psql_ext = f"""
+                INSTALL postgres;
+                LOAD postgres;
+                ATTACH '{psql_conn}'
+                AS pg (TYPE POSTGRES, READ_ONLY);
+            """
+
+        ### install httpfs extension for file transfer
+        install_httpfs_ext = """
+                INSTALL httpfs;
+                LOAD httpfs;
+        """
+
+        ### create secret to upload parquet files to GCS
+        create_gcs_secret = f"""
+                CREATE SECRET (
+                    TYPE gcs,
+                    KEY_ID '{gcs_hmac_access_key}',
+                    SECRET '{gcs_hmac_access_key_secret}',
+                    URL_STYLE path
+                );
+            """
+
+        ### settings for performance
+        performance_setting = """
+            SET memory_limit = '2GB';
+            SET threads TO 2;
+            SET enable_progress_bar = true;
+            SET preserve_insertion_order = false;
+        """
+
+        logging.info("installing psql extension...")
+        duck_conn.sql(install_psql_ext)
+
+        logging.info("installing httpfs extension...")
+        duck_conn.sql(install_httpfs_ext)
+
+        logging.info("creating gcs secret...")
+        duck_conn.sql(create_gcs_secret)
+
+        logging.info("setting the performance...")
+        duck_conn.sql(performance_setting)
+
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise
+
+
+def duckdb_getting_ids(
+    duck_conn: duckdb.DuckDBPyConnection,
+    psql_schema: str | None,
+    psql_table: str | None,
+) -> pd.DataFrame:
+    try:
+        ### get min & max id for indexing
+        query_index = f"""
+            SELECT
+                min(id) as min_id,
+                max(id) as max_id
+            from
+                pg.{psql_schema}.{psql_table}
+        """
+
+        logging.info("getting max_id & min_id for indexing...")
+        indexes_df = duck_conn.sql(query=query_index).df()
+        return indexes_df
+
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise
+
+
+def duckdb_describe_query(
+    duck_conn: duckdb.DuckDBPyConnection,
+    query: str,
+    psql_dstart: str,
+    psql_dend: str,
+    indexes_df: pd.DataFrame,
+) -> None:
+    ### show result of DESCRIBE from duckdb
+    print("=== DuckDB Schema Description ===")
+    describe_df = duck_conn.sql(
+        query=("DESCRIBE " + query),
+        params={
+            "min_id": indexes_df["min_id"].iloc[0],
+            "max_id": indexes_df["max_id"].iloc[0],
+            "psql_dstart": psql_dstart,
+            "psql_dend": psql_dend,
+        },
+    ).df()
+    return print(describe_df)
+
+    # ### generate schema from DESCRIBE result
+    # logging.info("generating BigQuery schema...")
+    # bq_mapper = DuckDBToBigQueryMapper()
+    # bq_schema_from_describe = bq_mapper.duckdb_describe_to_bq_schema(describe_df)
+    #
+    # print("\n=== BigQuery Schema (from DESCRIBE) ===")
+    # print(json.dumps(bq_schema_from_describe, indent=2))
+    #
+    # gcs_bucket = os.getenv("DEV_GCS_BUCKET")
+    #
+    # gcs_bucket_path = f"gs://{gcs_bucket}/{psql_table}/dt={etl_date}/duckdb.parquet"
+    # query_parquet_gcs = f"""
+    #     COPY (
+    #     {query_data}
+    #     )
+    #     TO '{gcs_bucket_path}' (
+    #         FORMAT parquet,
+    #         COMPRESSION zstd
+    #     );
+    # """
