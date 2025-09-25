@@ -211,18 +211,26 @@ def duckdb_getting_ids(
     psql_table: str | None,
 ) -> pd.DataFrame:
     try:
-        ### get min & max id for indexing
-        query_index = f"""
-            SELECT
-                min(id) as min_id,
-                max(id) as max_id
-            from
-                pg.{psql_schema}.{psql_table}
-        """
+        if os.path.exists("index_query.sql"):
+            with open("index_query.sql") as query:
+                query_index = query.read().format(
+                    psql_schema=psql_schema, psql_table=psql_table
+                )
+                #### get min & max id for indexing
+                # query_index = f"""
+                #    SELECT
+                #        min(id) as min_id,
+                #        max(id) as max_id
+                #    from
+                #        pg.{psql_schema}.{psql_table}
+                # """
 
-        logging.info("getting max_id & min_id for indexing...")
-        indexes_df = duck_conn.sql(query=query_index).df()
-        return indexes_df
+                logging.info("getting max_id & min_id for indexing...")
+                indexes_df = duck_conn.sql(query=query_index).df()
+                return indexes_df
+        else:
+            logger.error(".sql file not found.", exc_info=True)
+            raise
 
     except Exception as e:
         logger.error(e, exc_info=True)
@@ -248,6 +256,23 @@ def duckdb_describe_query(
         },
     ).df()
     return describe_df
+
+
+def duckdb_upload_parquet_to_bucket(
+    duck_conn: duckdb.DuckDBPyConnection,
+    query: str,
+    gcs_bucket_path: str,
+) -> None:
+    query_to_upload_parquet = f"""
+        COPY (
+        {query}
+        )
+        TO '{gcs_bucket_path}' (
+            FORMAT parquet,
+            COMPRESSION zstd
+        );
+    """
+    return duck_conn.sql(query_to_upload_parquet)
 
     # ### generate schema from DESCRIBE result
     # logging.info("generating BigQuery schema...")
