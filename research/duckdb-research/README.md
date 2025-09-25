@@ -4,7 +4,7 @@ flowchart LR;
     b[read query]
     c[run query]
     d[return data]
-    e[generate parquet filec]
+    e[generate parquet file]
     f[upload to gcs bucket]
 
     a-->b-->c-->d-->e-->f
