@@ -236,16 +236,6 @@ def duckdb_describe_query(
     psql_dend: str,
     indexes_df: pd.DataFrame,
 ) -> None:
-    main_df = duck_conn.sql(
-        query={query},
-        params={
-            "min_id": indexes_df["min_id"].iloc[0],
-            "max_id": indexes_df["max_id"].iloc[0],
-            "psql_dstart": psql_dstart,
-            "psql_dend": psql_dend,
-        },
-    ).df()
-
     ### show result of DESCRIBE from duckdb
     print("=== DuckDB Schema Description ===")
     describe_df = duck_conn.sql(
