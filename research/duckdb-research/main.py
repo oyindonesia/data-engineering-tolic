@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import timedelta
-
+import json
 import duckdb
 import pendulum
 from dotenv import load_dotenv
@@ -10,6 +10,7 @@ from helpers import (
     duckdb_describe_query,
     duckdb_getting_ids,
     duckdb_init_psql,
+    DuckDBToBigQueryMapper,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -74,13 +75,19 @@ with open("main_query.sql") as main_query:
     print(main_df.head())
 
     logging.info("running DESCRIBE to query...")
-    duckdb_describe_query(
+    describe_df = duckdb_describe_query(
         duck_conn=db_conn,
         query=query_data,
         psql_dstart=psql_dstart,
         psql_dend=psql_dend,
         indexes_df=indexes_df,
     )
+    # print(describe_df)
+
+    logging.info("generating BQ external table schema...")
+    bq_schema_mapper = DuckDBToBigQueryMapper()
+    bq_schema = bq_schema_mapper.duckdb_describe_to_bq_schema(describe_df)
+    # print(json.dumps(bq_schema, indent=2))
 
 
 # logging.info("executing main query:")
