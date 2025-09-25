@@ -1,14 +1,15 @@
-import os
-from dotenv import load_dotenv
 import logging
+import os
 from datetime import timedelta
+
 import duckdb
 import pendulum
+from dotenv import load_dotenv
 
 from helpers import (
+    duckdb_describe_query,
     duckdb_getting_ids,
     duckdb_init_psql,
-    duckdb_describe_query,
 )
 
 logging.basicConfig(level=logging.INFO)
