@@ -235,7 +235,7 @@ def duckdb_describe_query(
     psql_dstart: str,
     psql_dend: str,
     indexes_df: pd.DataFrame,
-) -> None:
+) -> pd.DataFrame:
     ### show result of DESCRIBE from duckdb
     print("=== DuckDB Schema Description ===")
     describe_df = duck_conn.sql(
@@ -247,7 +247,7 @@ def duckdb_describe_query(
             "psql_dend": psql_dend,
         },
     ).df()
-    return print(describe_df)
+    return describe_df
 
     # ### generate schema from DESCRIBE result
     # logging.info("generating BigQuery schema...")
