@@ -1,4 +1,5 @@
 import pandas as pd
+from typing import Dict, Optional
 import duckdb
 import os
 import logging
@@ -205,92 +206,116 @@ def duckdb_init_psql(
         raise
 
 
-def duckdb_getting_ids(
+def duckdb_read_query(
     duck_conn: duckdb.DuckDBPyConnection,
-    psql_schema: str | None,
-    psql_table: str | None,
-) -> pd.DataFrame:
+    file: str,
+    psql_schema: Optional[str] | None,
+    psql_table: Optional[str] | None,
+    params: Optional[Dict] = None,
+) -> None:
     try:
-        if os.path.exists("index_query.sql"):
-            with open("index_query.sql") as query:
-                query_index = query.read().format(
+        if os.path.exists(file):
+            with open(file) as query_file:
+                query = query_file.read().format(
                     psql_schema=psql_schema, psql_table=psql_table
                 )
-                #### get min & max id for indexing
-                # query_index = f"""
-                #    SELECT
-                #        min(id) as min_id,
-                #        max(id) as max_id
-                #    from
-                #        pg.{psql_schema}.{psql_table}
-                # """
 
-                logging.info("getting max_id & min_id for indexing...")
-                indexes_df = duck_conn.sql(query=query_index).df()
-                return indexes_df
+                result = duck_conn.sql(query=query, params=params)
+                return result
         else:
             logger.error(".sql file not found.", exc_info=True)
-            raise
 
     except Exception as e:
         logger.error(e, exc_info=True)
         raise
 
 
-def duckdb_describe_query(
-    duck_conn: duckdb.DuckDBPyConnection,
-    query: str,
-    psql_dstart: str,
-    psql_dend: str,
-    indexes_df: pd.DataFrame,
-) -> pd.DataFrame:
-    ### show result of DESCRIBE from duckdb
-    print("=== DuckDB Schema Description ===")
-    describe_df = duck_conn.sql(
-        query=("DESCRIBE " + query),
-        params={
-            "min_id": indexes_df["min_id"].iloc[0],
-            "max_id": indexes_df["max_id"].iloc[0],
-            "psql_dstart": psql_dstart,
-            "psql_dend": psql_dend,
-        },
-    ).df()
-    return describe_df
-
-
 def duckdb_upload_parquet_to_bucket(
     duck_conn: duckdb.DuckDBPyConnection,
     query: str,
-    gcs_bucket_path: str,
+    path: str,
+    format: str,
+    file: str = "upload_file_query.sql",
 ) -> None:
-    query_to_upload_parquet = f"""
-        COPY (
-        {query}
-        )
-        TO '{gcs_bucket_path}' (
-            FORMAT parquet,
-            COMPRESSION zstd
-        );
-    """
-    return duck_conn.sql(query_to_upload_parquet)
+    try:
+        if os.path.exists(file):
+            with open(file) as query_file:
+                upload_command = query_file.read().format(
+                    query=query, path=path, format=format
+                )
 
-    # ### generate schema from DESCRIBE result
-    # logging.info("generating BigQuery schema...")
-    # bq_mapper = DuckDBToBigQueryMapper()
-    # bq_schema_from_describe = bq_mapper.duckdb_describe_to_bq_schema(describe_df)
-    #
-    # print("\n=== BigQuery Schema (from DESCRIBE) ===")
-    # print(json.dumps(bq_schema_from_describe, indent=2))
-    #
-    # gcs_bucket = os.getenv("DEV_GCS_BUCKET")
-    #
-    # gcs_bucket_path = f"gs://{gcs_bucket}/{psql_table}/dt={etl_date}/duckdb.parquet"
-    # query_parquet_gcs = f"""
-    #     COPY (
-    #     {query_data}
-    #     )
-    #     TO '{gcs_bucket_path}' (
-    #         FORMAT parquet,
-    #         COMPRESSION zstd
-    #     );
-    # """
+                return duck_conn.sql(query=upload_command)
+        else:
+            logger.error(".sql file not found.", exc_info=True)
+
+    except Exception as e:
+        logger.error(e, exc_info=True)
+        raise
+
+
+# def duckdb_getting_index_id(
+#     duck_conn: duckdb.DuckDBPyConnection,
+#     file: str,
+#     psql_schema: str | None,
+#     psql_table: str | None,
+# ) -> pd.DataFrame:
+#     try:
+#         if os.path.exists(file):
+#             with open(file) as query:
+#                 query_index = query.read().format(
+#                     psql_schema=psql_schema, psql_table=psql_table
+#                 )
+#
+#                 logging.info("getting max_id & min_id for indexing...")
+#                 indexes_df = duck_conn.sql(query=query_index).df()
+#                 return indexes_df
+#         else:
+#             logger.error(".sql file not found.", exc_info=True)
+#             raise
+#
+#     except Exception as e:
+#         logger.error(e, exc_info=True)
+#         raise
+#
+#
+# def duckdb_describe_query(
+#     duck_conn: duckdb.DuckDBPyConnection,
+#     query: str,
+#     psql_dstart: str,
+#     psql_dend: str,
+#     indexes_df: pd.DataFrame,
+# ) -> pd.DataFrame:
+#     ### show result of DESCRIBE from duckdb
+#     print("=== DuckDB Schema Description ===")
+#     describe_df = duck_conn.sql(
+#         query=("DESCRIBE " + query),
+#         params={
+#             "min_id": indexes_df["min_id"].iloc[0],
+#             "max_id": indexes_df["max_id"].iloc[0],
+#             "psql_dstart": psql_dstart,
+#             "psql_dend": psql_dend,
+#         },
+#     ).df()
+#     return describe_df
+
+
+# ### generate schema from DESCRIBE result
+# logging.info("generating BigQuery schema...")
+# bq_mapper = DuckDBToBigQueryMapper()
+# bq_schema_from_describe = bq_mapper.duckdb_describe_to_bq_schema(describe_df)
+#
+# print("\n=== BigQuery Schema (from DESCRIBE) ===")
+# print(json.dumps(bq_schema_from_describe, indent=2))
+#
+# gcs_bucket = os.getenv("DEV_GCS_BUCKET")
+#
+# gcs_bucket_path = f"gs://{gcs_bucket}/{psql_table}/dt={etl_date}/duckdb.parquet"
+# query_parquet_gcs = f"""
+#     COPY (
+#     {query_data}
+#     )
+#     TO '{gcs_bucket_path}' (
+#         FORMAT parquet,
+#         COMPRESSION zstd
+#     );
+# """
