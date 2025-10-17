@@ -1,9 +1,5 @@
 import pandas as pd
-from typing import Dict, Optional
-import duckdb
-import os
 import logging
-from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -137,10 +133,11 @@ class DuckDBToBigQueryMapper:
                     {columns_sql}
                     )
                     OPTIONS (
-                      format = '{format_type}',
-                      uris = [
+                    format = '{format_type}',
+                    uris = [
                         {uris_sql}
-      ]"""
+                    ]
+        """
 
         if format_type.upper() == "CSV" and skip_leading_rows > 0:
             ddl += f",\n  skip_leading_rows = {skip_leading_rows}"
@@ -150,172 +147,147 @@ class DuckDBToBigQueryMapper:
         return ddl
 
 
-def duckdb_init_psql(
-    duck_conn: duckdb.DuckDBPyConnection,
-    psql_conn: str | None,
-    gcs_hmac_access_key: str | None,
-    gcs_hmac_access_key_secret: str | None,
-) -> None:
+def compare_bigquery_schemas_dict(
+    old_schema: list | dict, new_schema: list | dict
+) -> dict:
+    """
+    Compare two BigQuery schemas (as dict/list objects) and identify changes.
+    This version works in-memory without files - perfect for Airflow/GKE.
+
+    Args:
+        old_schema: Original schema as list or dict
+        new_schema: Updated schema as list or dict
+
+    Returns:
+        Dictionary with schema changes categorized
+    """
     try:
-        ### connect to postgres
-        install_psql_ext = f"""
-                INSTALL postgres;
-                LOAD postgres;
-                ATTACH '{psql_conn}'
-                AS pg (TYPE POSTGRES, READ_ONLY);
-            """
+        # Convert schema arrays to dictionaries for easier comparison
+        old_cols = (
+            {col["name"]: col for col in old_schema}
+            if isinstance(old_schema, list)
+            else old_schema
+        )
+        new_cols = (
+            {col["name"]: col for col in new_schema}
+            if isinstance(new_schema, list)
+            else new_schema
+        )
 
-        ### install httpfs extension for file transfer
-        install_httpfs_ext = """
-                INSTALL httpfs;
-                LOAD httpfs;
-        """
+        all_column_names = set(old_cols.keys()) | set(new_cols.keys())
 
-        ### create secret to upload parquet files to GCS
-        create_gcs_secret = f"""
-                CREATE SECRET (
-                    TYPE gcs,
-                    KEY_ID '{gcs_hmac_access_key}',
-                    SECRET '{gcs_hmac_access_key_secret}',
-                    URL_STYLE path
-                );
-            """
+        results = {
+            "added_columns": {},  # New columns added
+            "removed_columns": {},  # Columns that were removed
+            "modified_columns": {},  # Columns with changed properties
+            "unchanged_columns": {},  # Columns that remained the same
+        }
 
-        ### settings for performance
-        performance_setting = """
-            SET memory_limit = '2GB';
-            SET threads TO 2;
-            SET enable_progress_bar = true;
-            SET preserve_insertion_order = false;
-        """
+        for col_name in all_column_names:
+            if col_name in old_cols and col_name in new_cols:
+                if old_cols[col_name] == new_cols[col_name]:
+                    results["unchanged_columns"][col_name] = new_cols[col_name]
+                else:
+                    results["modified_columns"][col_name] = {
+                        "old": old_cols[col_name],
+                        "new": new_cols[col_name],
+                    }
+            elif col_name in new_cols:
+                results["added_columns"][col_name] = new_cols[col_name]
+            else:
+                results["removed_columns"][col_name] = old_cols[col_name]
 
-        logging.info("installing psql extension...")
-        duck_conn.sql(install_psql_ext)
-
-        logging.info("installing httpfs extension...")
-        duck_conn.sql(install_httpfs_ext)
-
-        logging.info("creating gcs secret...")
-        duck_conn.sql(create_gcs_secret)
-
-        logging.info("setting the performance...")
-        duck_conn.sql(performance_setting)
+        return results
 
     except Exception as e:
-        logger.error(e, exc_info=True)
+        logger.error(f"Error comparing schemas: {e}", exc_info=True)
         raise
 
 
-def duckdb_read_query(
-    duck_conn: duckdb.DuckDBPyConnection,
-    file: str,
-    psql_schema: Optional[str] | None,
-    psql_table: Optional[str] | None,
-    params: Optional[Dict] = None,
-) -> None:
-    try:
-        if os.path.exists(file):
-            with open(file) as query_file:
-                query = query_file.read().format(
-                    psql_schema=psql_schema, psql_table=psql_table
-                )
+def union_bigquery_schemas(old_schema: list, new_schema: list) -> dict:
+    """
+    Create a union of two schemas (append-only, never delete columns).
+    This preserves historical data even when source columns are deleted.
 
-                result = duck_conn.sql(query=query, params=params)
-                return result
-        else:
-            logger.error(".sql file not found.", exc_info=True)
+    Args:
+        old_schema: Existing schema (what's currently in BigQuery/GCS)
+        new_schema: New schema (from current query)
+
+    Returns:
+        {
+            'union_schema': List of all columns from both schemas,
+            'added_columns': Columns only in new_schema (newly added),
+            'removed_from_source': Columns only in old_schema (deleted from source),
+            'type_conflicts': Columns with different types,
+            'unchanged_columns': Columns present in both with same type
+        }
+
+    Example:
+        old = [{"name": "id", "type": "INTEGER"}, {"name": "email", "type": "STRING"}]
+        new = [{"name": "id", "type": "INTEGER"}, {"name": "phone", "type": "STRING"}]
+
+        result = union_bigquery_schemas(old, new)
+        # union_schema will have: [id, email, phone]
+        # email is kept even though deleted from source!
+    """
+    try:
+        # Convert to dicts for easier lookup
+        old_cols = {col["name"]: col for col in old_schema}
+        new_cols = {col["name"]: col for col in new_schema}
+
+        all_column_names = set(old_cols.keys()) | set(new_cols.keys())
+
+        union_schema = []
+        added_columns = {}
+        removed_from_source = {}
+        type_conflicts = {}
+        unchanged_columns = {}
+
+        # Process all columns in sorted order for consistency
+        for col_name in sorted(all_column_names):
+            if col_name in new_cols:
+                # Column exists in new schema
+                col_def = new_cols[col_name].copy()
+
+                if col_name in old_cols:
+                    # Column exists in both - check for type changes
+                    if old_cols[col_name]["type"] != new_cols[col_name]["type"]:
+                        # Type conflict detected!
+                        type_conflicts[col_name] = {
+                            "old_type": old_cols[col_name]["type"],
+                            "new_type": new_cols[col_name]["type"],
+                        }
+                        # Keep the old type to maintain compatibility with historical data
+                        col_def = old_cols[col_name].copy()
+                        logger.warning(
+                            f"Type conflict for column '{col_name}': "
+                            f"{old_cols[col_name]['type']} → {new_cols[col_name]['type']}. "
+                            f"Keeping old type for compatibility."
+                        )
+                    else:
+                        # Column unchanged
+                        unchanged_columns[col_name] = col_def
+                else:
+                    # New column added
+                    added_columns[col_name] = col_def
+
+                union_schema.append(col_def)
+
+            elif col_name in old_cols:
+                # Column only in old schema (removed from source)
+                # But we keep it for historical data!
+                col_def = old_cols[col_name].copy()
+                removed_from_source[col_name] = col_def
+                union_schema.append(col_def)
+
+        return {
+            "union_schema": union_schema,
+            "added_columns": added_columns,
+            "removed_from_source": removed_from_source,
+            "type_conflicts": type_conflicts,
+            "unchanged_columns": unchanged_columns,
+        }
 
     except Exception as e:
-        logger.error(e, exc_info=True)
+        logger.error(f"Error creating union schema: {e}", exc_info=True)
         raise
-
-
-def duckdb_upload_parquet_to_bucket(
-    duck_conn: duckdb.DuckDBPyConnection,
-    query: str,
-    path: str,
-    format: str,
-    file: str = "upload_file_query.sql",
-) -> None:
-    try:
-        if os.path.exists(file):
-            with open(file) as query_file:
-                upload_command = query_file.read().format(
-                    query=query, path=path, format=format
-                )
-
-                return duck_conn.sql(query=upload_command)
-        else:
-            logger.error(".sql file not found.", exc_info=True)
-
-    except Exception as e:
-        logger.error(e, exc_info=True)
-        raise
-
-
-# def duckdb_getting_index_id(
-#     duck_conn: duckdb.DuckDBPyConnection,
-#     file: str,
-#     psql_schema: str | None,
-#     psql_table: str | None,
-# ) -> pd.DataFrame:
-#     try:
-#         if os.path.exists(file):
-#             with open(file) as query:
-#                 query_index = query.read().format(
-#                     psql_schema=psql_schema, psql_table=psql_table
-#                 )
-#
-#                 logging.info("getting max_id & min_id for indexing...")
-#                 indexes_df = duck_conn.sql(query=query_index).df()
-#                 return indexes_df
-#         else:
-#             logger.error(".sql file not found.", exc_info=True)
-#             raise
-#
-#     except Exception as e:
-#         logger.error(e, exc_info=True)
-#         raise
-#
-#
-# def duckdb_describe_query(
-#     duck_conn: duckdb.DuckDBPyConnection,
-#     query: str,
-#     psql_dstart: str,
-#     psql_dend: str,
-#     indexes_df: pd.DataFrame,
-# ) -> pd.DataFrame:
-#     ### show result of DESCRIBE from duckdb
-#     print("=== DuckDB Schema Description ===")
-#     describe_df = duck_conn.sql(
-#         query=("DESCRIBE " + query),
-#         params={
-#             "min_id": indexes_df["min_id"].iloc[0],
-#             "max_id": indexes_df["max_id"].iloc[0],
-#             "psql_dstart": psql_dstart,
-#             "psql_dend": psql_dend,
-#         },
-#     ).df()
-#     return describe_df
-
-
-# ### generate schema from DESCRIBE result
-# logging.info("generating BigQuery schema...")
-# bq_mapper = DuckDBToBigQueryMapper()
-# bq_schema_from_describe = bq_mapper.duckdb_describe_to_bq_schema(describe_df)
-#
-# print("\n=== BigQuery Schema (from DESCRIBE) ===")
-# print(json.dumps(bq_schema_from_describe, indent=2))
-#
-# gcs_bucket = os.getenv("DEV_GCS_BUCKET")
-#
-# gcs_bucket_path = f"gs://{gcs_bucket}/{psql_table}/dt={etl_date}/duckdb.parquet"
-# query_parquet_gcs = f"""
-#     COPY (
-#     {query_data}
-#     )
-#     TO '{gcs_bucket_path}' (
-#         FORMAT parquet,
-#         COMPRESSION zstd
-#     );
-# """
